@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Railgate Control</title>
+
+<link rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin="" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+        crossorigin=""></script>
+
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #181b22;
+    --panel-2: #20242d;
+    --text: #e6e8ee;
+    --muted: #8a93a6;
+    --accent: #4aa3ff;
+    --good: #28c76f;
+    --warn: #f4c542;
+    --bad: #ff4d4d;
+    --border: #2a2f3a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--text);
+  }
+  header {
+    padding: 14px 22px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  header h1 { font-size: 18px; margin: 0; letter-spacing: 0.5px; }
+  .badge {
+    padding: 4px 10px; border-radius: 999px;
+    font-size: 12px; font-weight: 600; background: #2a2f3a; color: var(--muted);
+  }
+  .badge.safe    { background: rgba(40,198,111,.15); color: var(--good); }
+  .badge.incoming{ background: rgba(244,197,66,.18); color: var(--warn); }
+  .badge.passing { background: rgba(255,77,77,.18);  color: var(--bad);  }
+
+  main {
+    display: grid; gap: 16px; padding: 16px;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto;
+  }
+  @media (max-width: 980px) { main { grid-template-columns: 1fr; } }
+
+  .panel {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px;
+  }
+  .panel h2 {
+    margin: 0 0 10px; font-size: 13px; font-weight: 600;
+    color: var(--muted); text-transform: uppercase; letter-spacing: 1px;
+  }
+
+  .leds { display: flex; gap: 28px; align-items: center; justify-content: center; padding: 14px 0; }
+  .led-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .led {
+    width: 76px; height: 76px; border-radius: 50%;
+    background: #2a2f3a;
+    box-shadow: inset 0 0 18px rgba(0,0,0,.6), 0 0 0 4px #0a0c10;
+    transition: background .2s, box-shadow .2s;
+  }
+  .led.on.yellow {
+    background: radial-gradient(circle at 35% 30%, #ffe17a, #f4c542 60%, #7a6300 100%);
+    box-shadow: 0 0 28px 6px rgba(244,197,66,.55), inset 0 0 14px rgba(0,0,0,.35);
+  }
+  .led.on.red {
+    background: radial-gradient(circle at 35% 30%, #ff9d9d, #ff4d4d 55%, #6e0000 100%);
+    box-shadow: 0 0 28px 6px rgba(255,77,77,.6), inset 0 0 14px rgba(0,0,0,.35);
+  }
+  .led-label { font-size: 12px; color: var(--muted); }
+
+  .kv { display: grid; grid-template-columns: 140px 1fr; gap: 4px 14px; font-size: 14px; }
+  .kv div:nth-child(odd) { color: var(--muted); }
+  .kv code { font-family: ui-monospace, "JetBrains Mono", Menlo, monospace; }
+
+  #map { width: 100%; height: 360px; border-radius: 8px; overflow: hidden; }
+
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .row + .row { margin-top: 10px; }
+
+  input[type="number"], input[type="text"] {
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 8px; width: 130px; font: inherit;
+  }
+  label { font-size: 13px; color: var(--muted); }
+
+  button {
+    background: var(--accent); color: #001226; border: 0;
+    padding: 7px 12px; border-radius: 6px; font-weight: 600;
+    cursor: pointer; font: inherit;
+  }
+  button.secondary { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); }
+  button.danger    { background: #3a1a20; color: #ffb3b3; border: 1px solid #5a2530; }
+  button:disabled  { opacity: 0.5; cursor: not-allowed; }
+
+  .pill { font-size: 12px; padding: 2px 8px; border-radius: 99px; background: #2a2f3a; color: var(--muted); }
+  .pill.armed { background: rgba(40,198,111,.15); color: var(--good); }
+  .pill.idle  { background: rgba(244,197,66,.18); color: var(--warn); }
+  .muted { color: var(--muted); }
+
+  .note { font-size: 12px; color: var(--muted); margin-top: 6px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Railgate Crossing Control</h1>
+  <div>
+    <span id="armed-pill" class="pill idle">disarmed</span>
+    <span id="status-badge" class="badge">unknown</span>
+  </div>
+</header>
+
+<main>
+  <!-- Status / LEDs -->
+  <section class="panel">
+    <h2>Crossing State</h2>
+    <div class="leds">
+      <div class="led-wrap">
+        <div id="led-yellow" class="led yellow"></div>
+        <div class="led-label">INCOMING</div>
+      </div>
+      <div class="led-wrap">
+        <div id="led-red" class="led red"></div>
+        <div class="led-label">PASSING</div>
+      </div>
+    </div>
+    <div class="kv">
+      <div>Status</div>           <div><code id="k-status">—</code></div>
+      <div>Distance to gate</div> <div><code id="k-distance">—</code></div>
+      <div>Train lat / lon</div>  <div><code id="k-trainpos">—</code></div>
+      <div>Crossing lat / lon</div><div><code id="k-crosspos">—</code></div>
+    </div>
+  </section>
+
+  <!-- Map -->
+  <section class="panel">
+    <h2>Map</h2>
+    <div id="map"></div>
+    <div class="note">Train = blue dot. Crossing = red marker. Yellow ring = incoming threshold, red ring = passing threshold.</div>
+  </section>
+
+  <!-- IMU (display only) -->
+  <section class="panel">
+    <h2>IMU (display only)</h2>
+    <div class="kv">
+      <div>Orientation (x,y,z,w)</div> <div><code id="k-quat">—</code></div>
+      <div>Roll / Pitch / Yaw</div>     <div><code id="k-rpy">—</code></div>
+      <div>Angular vel (rad/s)</div>    <div><code id="k-angvel">—</code></div>
+      <div>Linear accel (m/s²)</div>    <div><code id="k-linacc">—</code></div>
+    </div>
+  </section>
+
+  <!-- Settings -->
+  <section class="panel">
+    <h2>Settings</h2>
+
+    <div class="row">
+      <button id="btn-set-current">Set crossing to current GPS</button>
+      <button id="btn-clear" class="danger">Clear crossing</button>
+    </div>
+
+    <div class="row">
+      <label>Manual lat</label>
+      <input type="number" step="any" id="in-lat" placeholder="latitude">
+      <label>Manual lon</label>
+      <input type="number" step="any" id="in-lon" placeholder="longitude">
+      <button id="btn-set-manual" class="secondary">Set manually</button>
+    </div>
+
+    <div class="row">
+      <label>Incoming threshold (m)</label>
+      <input type="number" step="any" min="1" id="in-incoming">
+      <label>Passing threshold (m)</label>
+      <input type="number" step="any" min="1" id="in-passing">
+      <button id="btn-set-thresh" class="secondary">Apply thresholds</button>
+    </div>
+    <div class="note">Logic: <code>safe</code> if distance &gt; incoming; <code>incoming</code> if passing &lt; distance ≤ incoming; <code>passing</code> if distance ≤ passing.</div>
+  </section>
+</main>
+
+<script>
+  // ---------- map ----------
+  const map = L.map('map', { zoomControl: true }).setView([23.78, 90.40], 13);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap'
+  }).addTo(map);
+
+  const trainMarker = L.circleMarker([0, 0], {
+    radius: 8, color: '#4aa3ff', fillColor: '#4aa3ff', fillOpacity: 0.9, weight: 2,
+  });
+  const crossingMarker = L.marker([0, 0]);
+  let incomingRing = null, passingRing = null;
+  let trainOnMap = false, crossingOnMap = false, didAutoCenter = false;
+
+  function setRings(lat, lon, incomingM, passingM) {
+    if (incomingRing) map.removeLayer(incomingRing);
+    if (passingRing)  map.removeLayer(passingRing);
+    incomingRing = L.circle([lat, lon], {
+      radius: incomingM, color: '#f4c542', weight: 1.5, fillOpacity: 0.05,
+    }).addTo(map);
+    passingRing = L.circle([lat, lon], {
+      radius: passingM, color: '#ff4d4d', weight: 1.5, fillOpacity: 0.07,
+    }).addTo(map);
+  }
+
+  // ---------- helpers ----------
+  function fmt(n, d=6) { return (n === null || n === undefined || isNaN(n)) ? '—' : Number(n).toFixed(d); }
+  function quatToRPY(x, y, z, w) {
+    // ZYX intrinsic -> roll (X), pitch (Y), yaw (Z)
+    const sinr = 2 * (w*x + y*z);
+    const cosr = 1 - 2 * (x*x + y*y);
+    const roll = Math.atan2(sinr, cosr);
+    const sinp = 2 * (w*y - z*x);
+    const pitch = Math.abs(sinp) >= 1 ? Math.sign(sinp) * Math.PI / 2 : Math.asin(sinp);
+    const siny = 2 * (w*z + x*y);
+    const cosy = 1 - 2 * (y*y + z*z);
+    const yaw = Math.atan2(siny, cosy);
+    const r2d = 180 / Math.PI;
+    return [roll * r2d, pitch * r2d, yaw * r2d];
+  }
+
+  // ---------- live state ----------
+  function applyState(s) {
+    // Armed pill
+    const armedPill = document.getElementById('armed-pill');
+    if (s.armed) { armedPill.textContent = 'armed';    armedPill.className = 'pill armed'; }
+    else         { armedPill.textContent = 'disarmed'; armedPill.className = 'pill idle'; }
+
+    // Status badge + LEDs
+    const badge = document.getElementById('status-badge');
+    badge.textContent = s.status;
+    badge.className = 'badge ' + (['safe','incoming','passing'].includes(s.status) ? s.status : '');
+
+    document.getElementById('led-yellow').classList.toggle('on', s.status === 'incoming');
+    document.getElementById('led-red').classList.toggle('on',    s.status === 'passing');
+
+    // KV panel
+    document.getElementById('k-status').textContent = s.status;
+    document.getElementById('k-distance').textContent =
+      s.distance_m === null || s.distance_m === undefined ? '—' : s.distance_m.toFixed(2) + ' m';
+
+    if (s.gps) {
+      document.getElementById('k-trainpos').textContent = `${fmt(s.gps.lat)}, ${fmt(s.gps.lon)}`;
+      trainMarker.setLatLng([s.gps.lat, s.gps.lon]);
+      if (!trainOnMap) { trainMarker.addTo(map); trainOnMap = true; }
+      if (!didAutoCenter) { map.setView([s.gps.lat, s.gps.lon], 16); didAutoCenter = true; }
+    } else {
+      document.getElementById('k-trainpos').textContent = '—';
+    }
+
+    if (s.imu) {
+      const {qx, qy, qz, qw, ang_vel, lin_acc} = s.imu;
+      document.getElementById('k-quat').textContent =
+        `${fmt(qx,3)}, ${fmt(qy,3)}, ${fmt(qz,3)}, ${fmt(qw,3)}`;
+      const [r, p, y] = quatToRPY(qx, qy, qz, qw);
+      document.getElementById('k-rpy').textContent =
+        `${fmt(r,2)}°, ${fmt(p,2)}°, ${fmt(y,2)}°`;
+      document.getElementById('k-angvel').textContent =
+        `${fmt(ang_vel[0],3)}, ${fmt(ang_vel[1],3)}, ${fmt(ang_vel[2],3)}`;
+      document.getElementById('k-linacc').textContent =
+        `${fmt(lin_acc[0],3)}, ${fmt(lin_acc[1],3)}, ${fmt(lin_acc[2],3)}`;
+    }
+
+    // Crossing
+    const cl = s.settings.crossing_lat, cn = s.settings.crossing_lon;
+    if (cl !== null && cn !== null && cl !== undefined && cn !== undefined) {
+      document.getElementById('k-crosspos').textContent = `${fmt(cl)}, ${fmt(cn)}`;
+      crossingMarker.setLatLng([cl, cn]);
+      if (!crossingOnMap) { crossingMarker.addTo(map); crossingOnMap = true; }
+      setRings(cl, cn, s.settings.incoming_threshold_m, s.settings.passing_threshold_m);
+    } else {
+      document.getElementById('k-crosspos').textContent = '— (not set)';
+      if (crossingOnMap) { map.removeLayer(crossingMarker); crossingOnMap = false; }
+      if (incomingRing) { map.removeLayer(incomingRing); incomingRing = null; }
+      if (passingRing)  { map.removeLayer(passingRing);  passingRing  = null; }
+    }
+
+    // Reflect thresholds in inputs only if user is not currently typing in them
+    const inc = document.getElementById('in-incoming');
+    const pas = document.getElementById('in-passing');
+    if (document.activeElement !== inc) inc.value = s.settings.incoming_threshold_m;
+    if (document.activeElement !== pas) pas.value = s.settings.passing_threshold_m;
+  }
+
+  // ---------- SSE ----------
+  const es = new EventSource('/stream');
+  es.onmessage = (ev) => {
+    try { applyState(JSON.parse(ev.data)); } catch (e) { console.error(e); }
+  };
+  es.onerror = () => { /* browser auto-reconnects */ };
+
+  // ---------- buttons ----------
+  async function postJSON(url, body) {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body || {}),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok || !data.ok) {
+      alert(data.error || ('HTTP ' + r.status));
+    }
+    return data;
+  }
+
+  document.getElementById('btn-set-current').onclick =
+    () => postJSON('/api/set_crossing', {mode: 'current'});
+
+  document.getElementById('btn-set-manual').onclick = () => {
+    const lat = parseFloat(document.getElementById('in-lat').value);
+    const lon = parseFloat(document.getElementById('in-lon').value);
+    if (isNaN(lat) || isNaN(lon)) { alert('Enter numeric lat and lon'); return; }
+    postJSON('/api/set_crossing', {mode: 'manual', lat, lon});
+  };
+
+  document.getElementById('btn-clear').onclick =
+    () => postJSON('/api/clear_crossing', {});
+
+  document.getElementById('btn-set-thresh').onclick = () => {
+    const incoming_m = parseFloat(document.getElementById('in-incoming').value);
+    const passing_m  = parseFloat(document.getElementById('in-passing').value);
+    if (isNaN(incoming_m) || isNaN(passing_m)) { alert('Enter both thresholds'); return; }
+    postJSON('/api/set_thresholds', {incoming_m, passing_m});
+  };
+
+  // Allow clicking on the map to set the crossing manually.
+  map.on('click', (e) => {
+    document.getElementById('in-lat').value = e.latlng.lat.toFixed(7);
+    document.getElementById('in-lon').value = e.latlng.lng.toFixed(7);
+  });
+</script>
+</body>
+</html>
