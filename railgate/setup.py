@@ -21,6 +21,7 @@ setup(
     entry_points={
         'console_scripts': [
             'web_ui = railgate.web_ui:main',
+            'sim_web_ui = railgate.sim_web_ui:main',
         ],
     },
 )

@@ -43,6 +43,7 @@
   .badge.safe    { background: rgba(40,198,111,.15); color: var(--good); }
   .badge.incoming{ background: rgba(244,197,66,.18); color: var(--warn); }
   .badge.passing { background: rgba(255,77,77,.18);  color: var(--bad);  }
+  .badge.outgoing{ background: rgba(74,163,255,.18); color: var(--accent); }
 
   main {
     display: grid; gap: 16px; padding: 16px;
@@ -75,6 +76,14 @@
   .led.on.red {
     background: radial-gradient(circle at 35% 30%, #ff9d9d, #ff4d4d 55%, #6e0000 100%);
     box-shadow: 0 0 28px 6px rgba(255,77,77,.6), inset 0 0 14px rgba(0,0,0,.35);
+  }
+  .led.on.green {
+    background: radial-gradient(circle at 35% 30%, #9af5bf, #28c76f 55%, #0c5e2f 100%);
+    box-shadow: 0 0 28px 6px rgba(40,198,111,.55), inset 0 0 14px rgba(0,0,0,.35);
+  }
+  .led.on.blue {
+    background: radial-gradient(circle at 35% 30%, #b8d8ff, #4aa3ff 55%, #0a3a6e 100%);
+    box-shadow: 0 0 28px 6px rgba(74,163,255,.55), inset 0 0 14px rgba(0,0,0,.35);
   }
   .led-label { font-size: 12px; color: var(--muted); }
 
@@ -134,6 +143,14 @@
         <div id="led-red" class="led red"></div>
         <div class="led-label">PASSING</div>
       </div>
+      <div class="led-wrap">
+        <div id="led-blue" class="led blue"></div>
+        <div class="led-label">OUTGOING</div>
+      </div>
+      <div class="led-wrap">
+        <div id="led-green" class="led green"></div>
+        <div class="led-label">SAFE</div>
+      </div>
     </div>
     <div class="kv">
       <div>Status</div>           <div><code id="k-status">—</code></div>
@@ -185,7 +202,7 @@
       <input type="number" step="any" min="1" id="in-passing">
       <button id="btn-set-thresh" class="secondary">Apply thresholds</button>
     </div>
-    <div class="note">Logic: <code>safe</code> if distance &gt; incoming; <code>incoming</code> if passing &lt; distance ≤ incoming; <code>passing</code> if distance ≤ passing.</div>
+    <div class="note">Logic: <code>safe</code> if distance &gt; incoming; <code>incoming</code>/<code>outgoing</code> if passing &lt; distance ≤ incoming (<code>outgoing</code> once the train has cleared the crossing); <code>passing</code> if distance ≤ passing.</div>
   </section>
 </main>
 
@@ -241,10 +258,12 @@
     // Status badge + LEDs
     const badge = document.getElementById('status-badge');
     badge.textContent = s.status;
-    badge.className = 'badge ' + (['safe','incoming','passing'].includes(s.status) ? s.status : '');
+    badge.className = 'badge ' + (['safe','incoming','passing','outgoing'].includes(s.status) ? s.status : '');
 
     document.getElementById('led-yellow').classList.toggle('on', s.status === 'incoming');
     document.getElementById('led-red').classList.toggle('on',    s.status === 'passing');
+    document.getElementById('led-blue').classList.toggle('on',   s.status === 'outgoing');
+    document.getElementById('led-green').classList.toggle('on',  s.status === 'safe');
 
     // KV panel
     document.getElementById('k-status').textContent = s.status;

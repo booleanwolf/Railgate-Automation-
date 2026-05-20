@@ -63,8 +63,9 @@ class Settings:
 class SharedState:
     gps: Optional[GpsSample] = None
     imu: Optional[ImuSample] = None
-    status: str = "unknown"                # safe / incoming / passing / unknown
+    status: str = "unknown"                # safe / incoming / passing / outgoing / unknown
     distance_m: Optional[float] = None
+    has_passed: bool = False               # latched once the train clears the crossing
     settings: Settings = field(default_factory=Settings)
     lock: threading.Lock = field(default_factory=threading.Lock)
     subscribers: list = field(default_factory=list)  # list[queue.Queue]
@@ -107,12 +108,20 @@ def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 2 * _EARTH_R * math.asin(math.sqrt(a))
 
 
-def classify(distance_m: float, s: Settings) -> str:
+def classify(distance_m: float, s: Settings, has_passed: bool = False) -> tuple[str, bool]:
+    """Return (status, has_passed).
+
+    `incoming` and `outgoing` share the same distance band (between the passing
+    and incoming thresholds); they differ only by direction. `has_passed`
+    latches True once the train is within the passing threshold, so the band
+    reads `outgoing` while the train recedes. It clears once the train is
+    `safe` (fully clear of the crossing).
+    """
     if distance_m <= s.passing_threshold_m:
-        return "passing"
+        return "passing", True
     if distance_m <= s.incoming_threshold_m:
-        return "incoming"
-    return "safe"
+        return ("outgoing" if has_passed else "incoming"), has_passed
+    return "safe", False
 
 
 # ---------- ROS2 node ------------------------------------------------------
@@ -150,10 +159,11 @@ class RailgateNode(Node):
             if armed:
                 d = haversine_m(sample.lat, sample.lon, s.crossing_lat, s.crossing_lon)
                 STATE.distance_m = d
-                STATE.status = classify(d, s)
+                STATE.status, STATE.has_passed = classify(d, s, STATE.has_passed)
             else:
                 STATE.distance_m = None
                 STATE.status = "unknown"
+                STATE.has_passed = False
             status_to_pub = STATE.status if armed else None
 
         if status_to_pub is not None:
@@ -190,7 +200,7 @@ class RailgateNode(Node):
             armed = (STATE.settings.crossing_lat is not None
                      and STATE.settings.crossing_lon is not None)
             status = STATE.status
-        if armed and status in ("safe", "incoming", "passing"):
+        if armed and status in ("safe", "incoming", "passing", "outgoing"):
             self.status_pub.publish(String(data=status))
 
 
@@ -253,6 +263,7 @@ def api_clear_crossing():
         STATE.settings.crossing_lon = None
         STATE.status = "unknown"
         STATE.distance_m = None
+        STATE.has_passed = False
     STATE.broadcast()
     return jsonify({"ok": True})
 
